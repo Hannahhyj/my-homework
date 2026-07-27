@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>作业登记本</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#64748b',
+                        danger: '#ef4444',
+                        success: '#22c55e'
+                    }
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .task-row {
+                @apply flex items-center gap-2 py-2 border-b border-gray-200;
+            }
+            .subject-card {
+                @apply bg-white rounded-lg shadow-md p-4 mb-6;
+            }
+            .btn {
+                @apply px-3 py-1 rounded text-sm font-medium transition-all duration-200;
+            }
+            .btn-primary {
+                @apply bg-primary text-white hover:bg-primary/90;
+            }
+            .btn-secondary {
+                @apply bg-secondary text-white hover:bg-secondary/90;
+            }
+            .btn-danger {
+                @apply bg-danger text-white hover:bg-danger/90;
+            }
+            .btn-disabled {
+                @apply bg-gray-300 text-gray-500 cursor-not-allowed;
+            }
+            .timer-active {
+                @apply text-primary font-semibold;
+            }
+            .timer-warning {
+                @apply text-danger font-bold animate-pulse;
+            }
+            .timer-alert {
+                @apply text-yellow-500 font-bold;
+            }
+            .completed {
+                @apply line-through text-gray-500;
+            }
+            .time-input {
+                @apply w-[60px] px-2 py-1 border border-gray-300 rounded-lg text-center;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-4 md:p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-[clamp(1.8rem,4vw,2.5rem)] font-bold text-center text-gray-800 mb-6">📚 作业登记本</h1>
+        
+        <!-- 日期显示区 -->
+        <div class="subject-card text-center mb-8">
+            <div id="current-date" class="text-2xl font-bold text-gray-800"></div>
+            <div id="current-weekday" class="text-xl text-gray-600 mt-1"></div>
+            <div id="active-task-alert" class="mt-2 text-sm text-yellow-600 hidden">
+                <i class="fa fa-exclamation-circle"></i> 有作业正在进行中，完成后才能开始新作业
+            </div>
+        </div>
+
+        <!-- 语文作业区 -->
+        <div class="subject-card">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-red-600">语文作业</h2>
+                <button onclick="addTask('chinese')" class="btn btn-primary">
+                    <i class="fa fa-plus-circle"></i> 添加作业
+                </button>
+            </div>
+            <div id="chinese-tasks" class="space-y-3">
+                <!-- 动态添加作业行 -->
+            </div>
+        </div>
+
+        <!-- 数学作业区 -->
+        <div class="subject-card">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-blue-600">数学作业</h2>
+                <button onclick="addTask('math')" class="btn btn-primary">
+                    <i class="fa fa-plus-circle"></i> 添加作业
+                </button>
+            </div>
+            <div id="math-tasks" class="space-y-3">
+                <!-- 动态添加作业行 -->
+            </div>
+        </div>
+
+        <!-- 英语作业区 -->
+        <div class="subject-card">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-green-600">英语作业</h2>
+                <button onclick="addTask('english')" class="btn btn-primary">
+                    <i class="fa fa-plus-circle"></i> 添加作业
+                </button>
+            </div>
+            <div id="english-tasks" class="space-y-3">
+                <!-- 动态添加作业行 -->
+            </div>
+        </div>
+
+        <!-- 操作按钮区 -->
+        <div class="flex flex-wrap justify-center gap-4 mt-8 mb-8">
+            <button onclick="saveAllTasks()" class="btn btn-primary px-4 py-2 text-base">
+                <i class="fa fa-save mr-2"></i> 保存作业
+            </button>
+            <button onclick="printTasks()" class="btn btn-secondary px-4 py-2 text-base">
+                <i class="fa fa-print mr-2"></i> 打印作业
+            </button>
+            <button onclick="clearAllTasks()" class="btn btn-danger px-4 py-2 text-base">
+                <i class="fa fa-trash mr-2"></i> 清空作业
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量存储计时器和任务数据
+        let timers = {}; // 存储每个任务的计时器
+        const WARNING_REMAINING = 10*60; // 剩余10分钟提醒，单位：秒
+        let taskData = {
+            date: getCurrentDate(),
+            chinese: [],
+            math: [],
+            english: []
+        };
+        let activeTask = null; // 当前活跃任务 {subject, taskId}
+        let isAnyTaskRunning = false; // 是否有任务正在进行
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            updateDateDisplay();
+            loadSavedTasks();
+            if (taskData.chinese.length === 0) addTask('chinese');
+            if (taskData.math.length === 0) addTask('math');
+            if (taskData.english.length === 0) addTask('english');
+            updateAllButtonsState();
+        });
+
+        function updateDateDisplay() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth()+1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const weekDays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+            const weekDay = weekDays[now.getDay()];
+            document.getElementById('current-date').textContent = `${year}年${month}月${day}日`;
+            document.getElementById('current-weekday').textContent = weekDay;
+        }
+
+        function getCurrentDate() {
+            const now = new Date();
+            return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        }
+
+        // 添加作业行
+        function addTask(subject) {
+            const taskId = Date.now().toString();
+            const taskContainer = document.getElementById(`${subject}-tasks`);
+            const taskRow = document.createElement('div');
+            taskRow.className = 'task-row items-center justify-between';
+            taskRow.dataset.taskId = taskId;
+            taskRow.dataset.subject = subject;
+
+            taskRow.innerHTML = `
+                <div class="flex-1">
+                    <input type="text" placeholder="输入作业内容..." 
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        oninput="updateTaskContent('${subject}', '${taskId}', this.value)">
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="whitespace-nowrap">
+                        <span class="mr-1">预计:</span>
+                        <input type="number" min="1" placeholder="分" 
+                            class="time-input"
+                            oninput="updateEstimatedTime('${subject}', '${taskId}', this.value)">
+                    </div>
+                    <button class="btn start-btn btn-disabled" disabled onclick="startTimer('${subject}', '${taskId}', this)">
+                        <i class="fa fa-play"></i> 开始
+                    </button>
+                    <div id="timer-${subject}-${taskId}" class="timer text-sm min-w-[70px] text-center">00:00:00</div>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="done-${subject}-${taskId}" 
+                            onchange="toggleTaskDone('${subject}', '${taskId}', this.checked)"
+                            class="mr-1 h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary">
+                        <label for="done-${subject}-${taskId}">完成</label>
+                    </div>
+                    <button onclick="removeTask('${subject}', '${taskId}')" class="btn btn-danger">
+                        <i class="fa fa-trash"></i>
+                    </button>
+                </div>
+            `;
+            taskContainer.appendChild(taskRow);
+            taskData[subject].push({
+                id: taskId,
+                content: '',
+                estimatedTime: 0,
+                done: false,
+                startTime: null,
+                elapsedTime: 0,
+                timerRunning: false,
+                alertShown: false
+            });
+            saveTaskData();
+        }
+
+        function updateEstimatedTime(subject, taskId, value) {
+            const taskIndex = taskData[subject].findIndex(task => task.id === taskId);
+            if (taskIndex === -1) return;
+            const time = parseInt(value) || 0;
+            taskData[subject][taskIndex].estimatedTime = time;
+            updateButtonState(subject, taskId);
+            saveTaskData();
+        }
+
+        function updateButtonState(subject, taskId) {
+            const taskIndex = taskData[subject].findIndex(task => task.id === taskId);
+            if (taskIndex === -1) return;
+            const task = taskData[subject][taskIndex];
+            const button = document.querySelector(`[data-task-id="${taskId}"] .start-btn`);
+            if (!button) return;
+
+            if (task.done) {
+                button.disabled = true;
+                button.classList.add('btn-disabled');
+                button.classList.remove('btn-primary', 'btn-secondary');
+                return;
+            }
+
+            const hasValidTime = task.estimatedTime > 0;
+            const canStart = hasValidTime && !isAnyTaskRunning && !task.timerRunning;
+
+            if (!task.timerRunning) {
+                button.disabled = !canStart;
+                if (canStart) {
+                    button.classList.remove('btn-disabled');
+                    button.classList.add('btn-primary');
+                } else {
+                    button.classList.remove('btn-primary');
+                    button.classList.add('btn-disabled');
+                }
+            }
+        }
+
+        function updateAllButtonsState() {
+            document.getElementById('active-task-alert').classList.toggle('hidden', !isAnyTaskRunning);
+            ['chinese', 'math', 'english'].forEach(subject => {
+                taskData[subject].forEach(task => {
+                    updateButtonState(subject, task.id);
+                });
+            });
+        }
+
+        function startTimer(subject, taskId, button) {
+            const taskIndex = taskData[subject].findIndex(task => task.id === taskId);
+            if (taskIndex === -1) return;
+            const task = taskData[subject][taskIndex];
+
+            if (task.estimatedTime <= 0) {
+                alert('请先填写预计耗时（分钟）！');
+                const timeInput = document.querySelector(`[data-task-id="${taskId}"] .time-input`);
+                if (timeInput) timeInput.focus();
+                return;
+            }
+            if (isAnyTaskRunning && activeTask && !(activeTask.subject === subject && activeTask.taskId === taskId)) {
+                alert('一个作业完成后，才能开始下一个作业！');
+                return;
+            }
+
+            const timerElement = document.getElementById(`timer-${subject}-${taskId}`);
+            const taskRow = document.querySelector(`[data-task-id="${taskId}"]`);
+
+            if (!task.timerRunning) {
+                task.startTime = task.startTime || Date.now() - (task.elapsedTime * 1000);
+                task.timerRunning = true;
+                task.alertShown = false;
+                isAnyTaskRunning = true;
+                activeTask = { subject, taskId };
+
+                button.innerHTML = '<i class="fa fa-pause"></i> 暂停';
+                button.classList.remove('btn-primary', 'btn-disabled');
+                button.classList.add('btn-secondary');
+
+                timers[taskId] = setInterval(() => {
+                    const now = Date.now();
+                    task.elapsedTime = Math.floor((now - task.startTime)/1000);
+                    const remainingTime = Math.max(0, task.estimatedTime * 60 - task.elapsedTime);
+                    const hours = String(Math.floor(remainingTime / 3600)).padStart(2, '0');
+                    const minutes = String(Math.floor((remainingTime % 3600)/60)).padStart(2, '0');
+                    const seconds = String(remainingTime % 60).padStart(2, '0');
+                    timerElement.textContent = `${hours}:${minutes}:${seconds}`;
+
+                    timerElement.classList.remove('timer-warning', 'timer-alert');
+                    taskRow.classList.remove('bg-red-50', 'bg-yellow-50');
+
+                    if (remainingTime <= WARNING_REMAINING && remainingTime > 0 && !task.alertShown) {
+                        timerElement.classList.add('timer-alert');
+                        taskRow.classList.add('bg-yellow-50');
+                        showNotification(`仅剩10分钟，加油！`, task.content);
+                        task.alertShown = true;
+                    }
+                    if (remainingTime <= 0) {
+                        timerElement.classList.add('timer-warning');
+                        taskRow.classList.add('bg-red-50');
+                        if (!task.alertShown) {
+                            showNotification(`时间到！${task.content}`, '作业超时提醒');
+                            task.alertShown = true;
+                        }
+                    }
+                    timerElement.classList.add('timer-active');
+                }, 1000);
+                updateAllButtonsState();
+            } else {
+                clearInterval(timers[taskId]);
+                delete timers[taskId];
+                task.timerRunning = false;
+                isAnyTaskRunning = false;
+                activeTask = null;
+
+                button.innerHTML = '<i class="fa fa-play"></i> 开始';
+                button.classList.remove('btn-secondary');
+                button.classList.add('btn-primary');
+                timerElement.classList.remove('timer-active');
+                updateAllButtonsState();
+            }
+            saveTaskData();
+        }
+
+        function showNotification(message, title = "作业提醒") {
+            alert(message);
+            if (Notification.permission === "granted") {
+                new Notification(title, { body: message });
+            } else if (Notification.permission !== "denied") {
+                Notification.requestPermission().then(permission => {
+                    if (permission === "granted") new Notification(title, { body: message });
+                });
+            }
+        }
+
+        function updateTaskContent(subject, taskId, content) {
+            const taskIndex = taskData[subject].findIndex(task => task.id === taskId);
+            if (taskIndex !== -1) {
+                taskData[subject][taskIndex].content = content;
+                saveTaskData();
+            }
+        }
+
+        function toggleTaskDone(subject, taskId, isDone) {
+            const taskIndex = taskData[subject].findIndex(task => task.id === taskId);
+            if (taskIndex === -1) return;
+            const taskRow = document.querySelector(`[data-task-id="${taskId}"]`);
+            const inputField = taskRow.querySelector('input[type="text"]');
+            const timeInput = taskRow.querySelector('.time-input');
+            const button = taskRow.querySelector('.start-btn');
+            const task = taskData[subject][taskIndex];
+            task.done = isDone;
+
+            if (isDone) {
+                if (task.timerRunning) startTimer(subject, taskId, button);
+                inputField.classList.add('completed');
+                timeInput.disabled = true;
+                button.disabled = true;
+                button.classList.add('btn-disabled');
+                button.classList.remove('btn-primary', 'btn-secondary');
+                isAnyTaskRunning = false;
+                activeTask = null;
+                updateAllButtonsState();
+            } else {
+                inputField.classList.remove('completed');
+                timeInput.disabled = false;
+                updateButtonState(subject, taskId);
+            }
+            saveTaskData();
+        }
+
+        function removeTask(subject, taskId) {
+            if (timers[taskId]) {
+                clearInterval(timers[taskId]);
+                delete timers[taskId];
+                if (activeTask && activeTask.subject === subject && activeTask.taskId === taskId) {
+                    isAnyTaskRunning = false;
+                    activeTask = null;
+                    updateAllButtonsState();
+                }
+            }
+            const taskRow = document.querySelector(`[data-task-id="${taskId}"]`);
+            if (taskRow) taskRow.remove();
+            taskData[subject] = taskData[subject].filter(task => task.id !== taskId);
+            saveTaskData();
+        }
+
+        function saveAllTasks() {
+            saveTaskData();
+            alert('作业已成功保存！');
+        }
+        function saveTaskData() {
+            localStorage.setItem(`homework_${getCurrentDate()}`, JSON.stringify(taskData));
+        }
+
+        function loadSavedTasks() {
+            const savedData = localStorage.getItem(`homework_${getCurrentDate()}`);
+            if (!savedData) return;
+            taskData = JSON.parse(savedData);
+            isAnyTaskRunning = false;
+            activeTask = null;
+
+            ['chinese', 'math', 'english'].forEach(subject => {
+                const taskContainer = document.getElementById(`${subject}-tasks`);
+                taskContainer.innerHTML = '';
+                taskData[subject].forEach(task => {
+                    if (task.timerRunning) {
+                        isAnyTaskRunning = true;
+                        activeTask = { subject, taskId: task.id };
+                    }
+                    let elapsedTime = task.elapsedTime;
+                    let timerRunning = task.timerRunning;
+                    let timerDisplay = '00:00:00';
+                    let timerClass = '';
+                    let rowClass = '';
+                    let remainingTime = task.estimatedTime * 60 - elapsedTime;
+
+                    if (timerRunning) {
+                        elapsedTime = Math.floor((Date.now() - task.startTime)/1000);
+                        remainingTime = Math.max(0, task.estimatedTime * 60 - elapsedTime);
+                        task.elapsedTime = elapsedTime;
+                    }
+                    if (task.estimatedTime > 0) {
+                        const hours = String(Math.floor(remainingTime / 3600)).padStart(2, '0');
+                        const minutes = String(Math.floor((remainingTime % 3600)/60)).padStart(2, '0');
+                        const seconds = String(remainingTime % 60).padStart(2, '0');
+                        timerDisplay = `${hours}:${minutes}:${seconds}`;
+                    }
+                    if (remainingTime <= WARNING_REMAINING && remainingTime > 0) {
+                        timerClass = 'timer-alert';
+                        rowClass = 'bg-yellow-50';
+                    } else if (remainingTime <= 0) {
+                        timerClass = 'timer-warning';
+                        rowClass = 'bg-red-50';
+                    }
+                    if (timerRunning) timerClass += ' timer-active';
+
+                    const taskRow = document.createElement('div');
+                    taskRow.className = 'task-row items-center justify-between';
+                    taskRow.dataset.taskId = task.id;
+                    taskRow.dataset.subject = subject;
+                    taskRow.innerHTML = `
+                    <div class="flex-1">
+                        <input type="text" value="${task.content}" placeholder="输入作业内容..." 
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 ${task.done ? 'completed' : ''}"
+                            oninput="updateTaskContent('${subject}', '${task.id}', this.value)">
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="whitespace-nowrap">
+                            <span class="mr-1">预计:</span>
+                            <input type="number" min="1" placeholder="分" value="${task.estimatedTime || ''}"
+                                class="time-input"
+                                oninput="updateEstimatedTime('${subject}', '${task.id}', this.value)"
+                                ${task.done ? 'disabled' : ''}>
+                        </div>
+                        <button class="btn start-btn ${timerRunning ? 'btn-secondary' : (task.estimatedTime > 0 && !isAnyTaskRunning && !task.done ? 'btn-primary' : 'btn-disabled')}"
+                            ${(timerRunning || (task.estimatedTime > 0 && !isAnyTaskRunning && !task.done)) ? '' : 'disabled'}
+                            onclick="startTimer('${subject}', '${task.id}', this)">
+                            <i class="fa ${timerRunning ? 'fa-pause' : 'fa-play'}"></i> ${timerRunning ? '暂停' : '开始'}
+                        </button>
+                        <div id="timer-${subject}-${task.id}" class="timer text-sm min-w-[70px] text-center ${timerClass}" style="${rowClass ? `background-color: #fefce8;` : ''}">${timerDisplay}</div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="done-${subject}-${task.id}" 
+                                onchange="toggleTaskDone('${subject}', '${task.id}', this.checked)"
+                                class="mr-1 h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary"
+                                ${task.done ? 'checked' : ''}>
+                            <label for="done-${subject}-${task.id}">完成</label>
+                        </div>
+                        <button onclick="removeTask('${subject}', '${task.id}')" class="btn btn-danger">
+                            <i class="fa fa-trash"></i>
+                        </button>
+                    </div>
+                    `;
+                    taskContainer.appendChild(taskRow);
+                    if (timerRunning) startTimer(subject, task.id, taskRow.querySelector('.start-btn'));
+                });
+            });
+        }
+
+        // ===================== 已精简打印函数（仅保留你需要的打印内容）=====================
+        function printTasks() {
+            const printWindow = window.open('', '_blank');
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth()+1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const weekDays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+            const weekDay = weekDays[now.getDay()];
+            
+            // 打印模板：删除计时器剩余时间，仅保留 日期、科目、作业、预计耗时、勾选框
+            let printContent = `
+                <html>
+                <head>
+                    <title>作业登记本 - ${year}年${month}月${day}日</title>
+                    <style>
+                        body { font-family: "Microsoft YaHei", sans-serif; margin: 25px; font-size: 15px; }
+                        h1 { text-align: center; color: #222; font-size: 24px; margin-bottom: 10px; }
+                        .date-line { text-align: center; font-size: 18px; margin-bottom: 30px; color: #444; }
+                        .subject-block { margin: 20px 0; padding-bottom: 10px; }
+                        .subject-title { font-size: 19px; font-weight: bold; padding-bottom: 6px; border-bottom: 2px solid; margin-bottom: 12px; }
+                        .chinese-title { color: #dc2626; border-color: #dc2626; }
+                        .math-title { color: #2563eb; border-color: #2563eb; }
+                        .english-title { color: #16a34a; border-color: #16a34a; }
+                        .task-item { display: flex; align-items: center; margin: 10px 0; gap: 12px; }
+                        .task-check { width: 16px; height: 16px; }
+                        .task-name { flex: 1; }
+                        .task-est { color: #555; }
+                        .completed-text { text-decoration: line-through; color: #999; }
+                    </style>
+                </head>
+                <body>
+                    <h1>作业登记本</h1>
+                    <div class="date-line">${year}年${month}月${day}日  ${weekDay}</div>
+
+                    <div class="subject-block">
+                        <div class="subject-title chinese-title">语文作业</div>
+                        ${generatePrintTasks('chinese')}
+                    </div>
+                    
+                    <div class="subject-block">
+                        <div class="subject-title math-title">数学作业</div>
+                        ${generatePrintTasks('math')}
+                    </div>
+                    
+                    <div class="subject-block">
+                        <div class="subject-title english-title">英语作业</div>
+                        ${generatePrintTasks('english')}
+                    </div>
+                </body>
+                </html>
+            `;
+            printWindow.document.write(printContent);
+            printWindow.document.close();
+            printWindow.print();
+        }
+
+        // 打印单行作业：仅输出勾选框、作业内容、预计耗时，移除所有计时相关内容
+        function generatePrintTasks(subject) {
+            return taskData[subject].map(task => {
+                const contentStyle = task.done ? 'completed-text' : '';
+                const showContent = task.content || '未填写作业';
+                const estimateText = task.estimatedTime > 0 ? `${task.estimatedTime}分钟` : '未设置';
+                return `
+                    <div class="task-item">
+                        <input type="checkbox" class="task-check" ${task.done ? 'checked' : ''} disabled>
+                        <div class="task-name ${contentStyle}">${showContent}</div>
+                        <div class="task-est">预计：${estimateText}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+        // ==================================================================================
+
+        function clearAllTasks() {
+            if (!confirm('确定要清空所有作业吗？此操作不可恢复！')) return;
+            Object.values(timers).forEach(timer => clearInterval(timer));
+            timers = {};
+            isAnyTaskRunning = false;
+            activeTask = null;
+            taskData = {date: getCurrentDate(), chinese: [], math: [], english: []};
+            ['chinese', 'math', 'english'].forEach(subject => {
+                document.getElementById(`${subject}-tasks`).innerHTML = '';
+                addTask(subject);
+            });
+            localStorage.removeItem(`homework_${getCurrentDate()}`);
+            updateAllButtonsState();
+        }
+    </script>
+</body>
+</html>
